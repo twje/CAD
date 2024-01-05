@@ -56,6 +56,7 @@ public:
         return &mNodes[mNodes.size() - 1];
     }
 
+    size_t NodeCount() const { return mNodes.size(); }
     const Node& GetNode(size_t index) const { return mNodes[index]; }
     const sf::Color& GetColor() { return mColor; }
 
@@ -65,7 +66,7 @@ public:
     {
         for (const Node& node : mNodes)
         {
-            DrawPoint(target, node.GetPosition(), 3.0f, sf::Color::Red);
+            DrawPoint(target, node.GetPosition(), 3.0f, sf::Color::Blue);
         }
     }
 
@@ -98,17 +99,130 @@ public:
     }
 };
 
+class Box : public Shape
+{
+public:
+    Box()
+        : Shape(2)
+    { }
+
+    virtual void DrawShape(sf::RenderTarget& target)
+    {
+        const sf::Vector2f& position1 = GetNode(0).GetPosition();
+        const sf::Vector2f& position2 = GetNode(1).GetPosition();
+        sf::Vector2f size = position2 - position1;
+
+        sf::RectangleShape rectangle(size);
+        rectangle.setPosition(position1);        
+        rectangle.setFillColor({ 0, 0, 0, 0 });
+        rectangle.setOutlineColor(GetColor());
+        rectangle.setOutlineThickness(-1.f);
+
+        target.draw(rectangle);
+    }
+};
+
+class Circle : public Shape
+{
+public:
+    Circle()
+        : Shape(2)
+    { }
+
+    virtual void DrawShape(sf::RenderTarget& target)
+    {
+
+        const sf::Vector2f& position1 = GetNode(0).GetPosition();
+        const sf::Vector2f& position2 = GetNode(1).GetPosition();
+        float radius = (position1 - position2).length();
+
+        sf::Vertex line[] = { position1, position2 };
+
+        line[0].color = GetColor();
+        line[1].color = GetColor();
+
+        sf::CircleShape circle(radius);
+        circle.setFillColor({ 0, 0, 0, 0 });
+        circle.setOutlineColor(GetColor());
+        circle.setOutlineThickness(1.0f);
+        circle.setPosition(position1 - sf::Vector2f(radius, radius));
+        
+        target.draw(line, 2, sf::PrimitiveType::Lines);
+        target.draw(circle);
+    }
+};
+
+class Curve : public Shape
+{
+public:
+    Curve()
+        : Shape(3)
+    { }
+
+    virtual void DrawShape(sf::RenderTarget& target)
+    {
+        // Can only draw line from first to second
+        if (NodeCount() < 3)
+        {
+            const sf::Vector2f& position1 = GetNode(0).GetPosition();
+            const sf::Vector2f& position2 = GetNode(1).GetPosition();
+
+            sf::Vertex line[] = { position1, position2 };
+
+            line[0].color = GetColor();
+            line[1].color = GetColor();
+
+            target.draw(line, 2, sf::PrimitiveType::Lines);
+        }
+
+        if (NodeCount() == 3)
+        {
+            const sf::Vector2f& position1 = GetNode(0).GetPosition();
+            const sf::Vector2f& position2 = GetNode(1).GetPosition();
+            const sf::Vector2f& position3 = GetNode(2).GetPosition();
+
+            sf::Vertex line1[] = { position1, position2 };
+            line1[0].color = GetColor();
+            line1[1].color = GetColor();
+
+            sf::Vertex line2[] = { position2, position3 };
+            line2[0].color = GetColor();
+            line2[1].color = GetColor();
+            
+            target.draw(line1, 2, sf::PrimitiveType::Lines);
+            target.draw(line2, 2, sf::PrimitiveType::Lines);
+
+            // Bezier 
+            sf::Vector2f op = position1;
+            sf::Vector2f np = op;
+            for (float t = 0; t < 1.0f; t += 0.01f)
+            {
+                np = (1 - t) * (1 - t) * position1 + 2 * (1 - t) * t * position2 + t * t * position3;
+                sf::Vertex line[] = { op, np };
+                line[0].color = GetColor();
+                line[1].color = GetColor();
+                target.draw(line, 2, sf::PrimitiveType::Lines);
+                op = np;
+            }
+        }
+    }
+};
+
 enum class ShapeType
 {
     NONE = 0,
-    LINE = 1
+    LINE = 1,
+    BOX = 2,
+    CIRCLE = 3,
+    CURVE = 4
 };
 
 class Application
 {
 public:
     Application()
-        : mWindow(sf::VideoMode(sf::Vector2u(1600, 960), 32), "SFML works!")
+        : mWindow(sf::VideoMode(sf::Vector2u(1600, 960), 32), "SFML works!", 
+                                sf::Style::Default, sf::ContextSettings(0, 0, 8))
     {
         mView = mWindow.getDefaultView();
     }
@@ -180,6 +294,21 @@ public:
                 {
                     createShape = ShapeType::LINE;
                 }
+
+                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::B))
+                {
+                    createShape = ShapeType::BOX;
+                }
+
+                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::C))
+                {
+                    createShape = ShapeType::CIRCLE;
+                }
+                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S))
+                {
+                    createShape = ShapeType::CURVE;
+                }
+
             }            
 
             if (zoomIncrement != 0)
@@ -223,6 +352,27 @@ public:
                     case ShapeType::LINE:
                     {
                         tempShape = new Line();
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        break;
+                    }
+                    case ShapeType::BOX:
+                    {
+                        tempShape = new Box();
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        break;
+                    }
+                    case ShapeType::CIRCLE:
+                    {
+                        tempShape = new Circle();
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        break;
+                    }
+                    case ShapeType::CURVE:
+                    {
+                        tempShape = new Curve();
                         selectedNode = tempShape->GetNextNode(mCursor);
                         selectedNode = tempShape->GetNextNode(mCursor);
                         break;
