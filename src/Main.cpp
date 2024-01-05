@@ -2,6 +2,108 @@
 
 #include <iostream>
 
+class Shape;
+
+void DrawPoint(sf::RenderTarget& target, sf::Vector2f position, float radius, sf::Color color)
+{
+    sf::CircleShape shape(radius);
+    shape.setFillColor(color);
+    shape.setPosition({ position.x - radius, position.y - radius });
+    target.draw(shape);
+}
+
+class Node
+{
+public:
+    Node(Shape* parent, const sf::Vector2f& position)
+        : mParent(parent)
+        , mPosition(position)
+    { }
+
+    void SetPosition(const sf::Vector2f& position)
+    {
+        mPosition = position;
+    }
+
+    const sf::Vector2f& GetPosition() const { return mPosition; }
+
+public:
+    Shape* mParent;
+    sf::Vector2f mPosition;
+};
+
+class Shape
+{
+public:    
+    virtual ~Shape() = default;
+
+    Shape(size_t maxNodes)
+        : mMaxNodes(maxNodes)
+        , mColor(sf::Color::Green)
+    {
+        mNodes.reserve(maxNodes);
+    }    
+
+    Node* GetNextNode(const sf::Vector2f& position)
+    {
+        if (mNodes.size() == mMaxNodes)
+        {
+            return nullptr;
+        }
+
+        Node node(this, position);
+        mNodes.push_back(node);
+        return &mNodes[mNodes.size() - 1];
+    }
+
+    const Node& GetNode(size_t index) const { return mNodes[index]; }
+    const sf::Color& GetColor() { return mColor; }
+
+    void SetColor(const sf::Color& color) { mColor = color; }
+
+    void DrawNodes(sf::RenderTarget& target)
+    {
+        for (const Node& node : mNodes)
+        {
+            DrawPoint(target, node.GetPosition(), 3.0f, sf::Color::Red);
+        }
+    }
+
+    virtual void DrawShape(sf::RenderTarget& target) = 0;
+
+private:
+    std::vector<Node> mNodes;
+    size_t mMaxNodes;
+    sf::Color mColor;
+};
+
+class Line : public Shape
+{
+public:
+    Line()
+        : Shape(2)
+    { }
+
+    virtual void DrawShape(sf::RenderTarget& target)
+    {
+        sf::Vertex line[] = {
+            GetNode(0).GetPosition(),
+            GetNode(1).GetPosition()
+        };
+
+        line[0].color = GetColor();
+        line[1].color = GetColor();
+
+        target.draw(line, 2, sf::PrimitiveType::Lines);
+    }
+};
+
+enum class ShapeType
+{
+    NONE = 0,
+    LINE = 1
+};
+
 class Application
 {
 public:
@@ -13,13 +115,18 @@ public:
 
     void Run()
     {
-        bool isMiddleButtonPressed = false;
+        bool isMiddleButtonPressed = false;        
         sf::Vector2i lastPanPosition;        
+        
+        Shape* tempShape = nullptr;
+        Node* selectedNode = nullptr;
+        ShapeType createShape = ShapeType::NONE;
 
         while (mWindow.isOpen())
         {
             sf::Vector2i mousePosition = sf::Mouse::getPosition(mWindow);
             float zoomIncrement = 0.0f;
+            bool isLeftButtonJustReleased = false;
 
             sf::Event event;
             while (mWindow.pollEvent(event))
@@ -36,7 +143,7 @@ public:
                     {
                         lastPanPosition = mousePosition;
                         isMiddleButtonPressed = true;                        
-                    }
+                    }                                       
                 }
 
                 if (event.type == sf::Event::MouseButtonReleased)
@@ -44,6 +151,11 @@ public:
                     if (event.mouseButton.button == sf::Mouse::Button::Middle)
                     {
                         isMiddleButtonPressed = false;
+                    }
+
+                    if (event.mouseButton.button == sf::Mouse::Button::Left)
+                    {
+                        isLeftButtonJustReleased = true;
                     }
                 }
 
@@ -61,8 +173,14 @@ public:
                             zoomIncrement = -mZoomSpeed;
                         }   
                     }
-                }               
-            }
+                }
+
+                // Shapes
+                if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::L))
+                {
+                    createShape = ShapeType::LINE;
+                }
+            }            
 
             if (zoomIncrement != 0)
             {
@@ -98,6 +216,44 @@ public:
             mCursor.x = nearestGridX;
             mCursor.y = nearestGridY;
 
+            if (createShape != ShapeType::NONE)
+            {
+                switch (createShape)
+                {
+                    case ShapeType::LINE:
+                    {
+                        tempShape = new Line();
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        selectedNode = tempShape->GetNextNode(mCursor);
+                        break;
+                    }
+                }
+                createShape = ShapeType::NONE;
+            }
+
+            if (selectedNode != nullptr)
+            {
+                selectedNode->SetPosition(mCursor);
+            }
+
+            if (isLeftButtonJustReleased)
+            {
+                if (tempShape != nullptr)
+                {
+                    selectedNode = tempShape->GetNextNode(mCursor);
+                    if (selectedNode == nullptr)
+                    {
+                        tempShape->SetColor(sf::Color::White);
+                        mShapes.push_back(tempShape);
+                        tempShape = nullptr;
+                    }
+                }
+                else
+                {
+                    selectedNode = nullptr;
+                }
+            }
+
             mWindow.setView(mView);
             mWindow.clear();
             
@@ -111,25 +267,29 @@ public:
             {
                 for (size_t gridY = 0; gridY < viewSize.y + mGridSpacing; gridY += mGridSpacing)
                 {
-                    DrawPoint({ gridX + topLeftWorld.x, gridY + topLeftWorld.y }, 3.0f, sf::Color::Green);
+                    DrawPoint(mWindow, { gridX + topLeftWorld.x, gridY + topLeftWorld.y }, 3.0f, sf::Color::Green);
                 }
             }
             
-            DrawPoint(mCursor, 3.0f, sf::Color::Red);
+            for (Shape* shape : mShapes)
+            {
+                shape->DrawShape(mWindow);
+                shape->DrawNodes(mWindow);
+            }
 
+            if (tempShape != nullptr)
+            {
+                tempShape->DrawShape(mWindow);
+                tempShape->DrawNodes(mWindow);
+            }
+
+            DrawPoint(mWindow, mCursor, 3.0f, sf::Color::Yellow);
+            
             mWindow.display();           
         }
     }
 
 private:
-    void DrawPoint(sf::Vector2f position, float radius, sf::Color color)
-    {
-        sf::CircleShape shape(radius);
-        shape.setFillColor(color);
-        shape.setPosition({ position.x - radius, position.y - radius });
-        mWindow.draw(shape);
-    }
-
     float Clamp(float value, float minValue, float maxValue) 
     {
         return std::max(minValue, std::min(value, maxValue));
@@ -143,6 +303,7 @@ private:
     float mZoomMax = 1.7f;
     float mGridSpacing = 70.0f;
     sf::Vector2f mCursor;
+    std::vector<Shape*> mShapes;
 };
 
 int main()
